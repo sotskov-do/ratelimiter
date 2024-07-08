@@ -21,7 +21,7 @@ type RateLimiter struct {
 	refreshPeriod time.Duration
 }
 
-func NewRateLimiter(limit int64, t time.Duration) Limiter {
+func NewRateLimiter(limit int64, t time.Duration) *RateLimiter {
 	r := &RateLimiter{
 		limit:         limit,
 		refreshPeriod: t,
