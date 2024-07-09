@@ -1,6 +1,7 @@
 package ratelimiter
 
 import (
+	"fmt"
 	"sync/atomic"
 	"time"
 )
@@ -47,7 +48,7 @@ func (r *RateLimiter) Acquire() error {
 	currentAmount--
 	if currentAmount < 0 {
 		waitTime := r.refreshPeriod.Nanoseconds() - timeElapsed
-		time.Sleep(time.Duration(waitTime))
+		return fmt.Errorf("can't do the operation, try again after %s", time.Duration(waitTime))
 	}
 
 	atomic.StoreInt64(&r.currentAmount, currentAmount)
