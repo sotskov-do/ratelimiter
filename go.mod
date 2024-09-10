@@ -1,3 +1,3 @@
 module github.com/sotskov-do/ratelimiter
 
-go 1.19
+go 1.22

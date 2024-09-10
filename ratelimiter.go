@@ -1,73 +1,62 @@
 package ratelimiter
 
 import (
-	"fmt"
 	"sync/atomic"
 	"time"
 )
 
 type Limiter interface {
 	Acquire() error
-	SetLimit(limit int64)
-	SetRefreshPeriod(t time.Duration)
-	GetCurrentAmount() int64
-	GetLastUpdate() time.Time
+	SetNewLimit(limit int64, t time.Duration)
 }
 
 type RateLimiter struct {
-	currentAmount int64
-	lastUpdate    int64
-	limit         int64
-	refreshPeriod time.Duration
+	state      int64
+	padding    [56]byte
+	maxSlack   time.Duration
+	perRequest time.Duration
 }
 
 func NewRateLimiter(limit int64, t time.Duration) *RateLimiter {
+	perRequest := t / time.Duration(limit)
+	slack := 10 // TODO: to config
+
 	r := &RateLimiter{
-		limit:         limit,
-		refreshPeriod: t,
+		perRequest: perRequest,
+		maxSlack:   time.Duration(slack) * perRequest,
 	}
 
-	atomic.StoreInt64(&r.currentAmount, limit)
-	atomic.StoreInt64(&r.lastUpdate, time.Now().UnixNano())
+	atomic.StoreInt64(&r.state, time.Now().UnixNano())
 
 	return r
 }
 
-func (r *RateLimiter) Acquire() error {
-	now := time.Now().UnixNano()
-	lastUpdate := atomic.LoadInt64(&r.lastUpdate)
-	timeElapsed := now - lastUpdate
+func (r *RateLimiter) Acquire() {
+	var now, next int64
 
-	currentAmount := atomic.LoadInt64(&r.currentAmount)
+	for {
+		now = time.Now().UnixNano()
+		last := atomic.LoadInt64(&r.state)
 
-	if timeElapsed > r.refreshPeriod.Nanoseconds() {
-		currentAmount = r.limit
-		atomic.StoreInt64(&r.lastUpdate, now)
+		switch {
+		case r.maxSlack > 0 && now-last > int64(r.maxSlack)+int64(r.perRequest):
+			// if a lot of time passed between Acquire() calls
+			next = now - int64(r.maxSlack)
+		default:
+			next = last + int64(r.perRequest)
+		}
+
+		if atomic.CompareAndSwapInt64(&r.state, last, next) {
+			break
+		}
 	}
 
-	currentAmount--
-	if currentAmount < 0 {
-		waitTime := r.refreshPeriod.Nanoseconds() - timeElapsed
-		return fmt.Errorf("can't do the operation, try again after %s", time.Duration(waitTime))
+	waitTime := time.Duration(next - now)
+	if waitTime > 0 {
+		time.Sleep(waitTime)
 	}
-
-	atomic.StoreInt64(&r.currentAmount, currentAmount)
-
-	return nil
 }
 
-func (r *RateLimiter) SetLimit(limit int64) {
-	r.limit = limit
-}
-
-func (r *RateLimiter) SetRefreshPeriod(t time.Duration) {
-	r.refreshPeriod = t
-}
-
-func (r *RateLimiter) GetCurrentAmount() int64 {
-	return atomic.LoadInt64(&r.currentAmount)
-}
-
-func (r *RateLimiter) GetLastUpdate() time.Time {
-	return time.Unix(0, atomic.LoadInt64(&r.lastUpdate))
+func (r *RateLimiter) SetNewLimit(limit int64, t time.Duration) {
+	r.perRequest = t / time.Duration(limit)
 }
