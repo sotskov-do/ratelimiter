@@ -6,9 +6,11 @@ import (
 )
 
 type Limiter interface {
-	Acquire() error
+	Acquire()
 	SetNewLimit(limit int64, t time.Duration)
 }
+
+var _ Limiter = (*RateLimiter)(nil)
 
 type RateLimiter struct {
 	state      int64
